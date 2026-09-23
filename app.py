@@ -1,6 +1,7 @@
 from flask import Flask, jsonify, request
 import requests
 import sqlite3
+from google import genai as google_genai
 
 app = Flask(__name__)  
 #Flask() is a class — you are creating an instance of it
@@ -8,6 +9,8 @@ app = Flask(__name__)
 #when app.py is run directly, __name__ equals "__main__"
 
 API_KEY = "8b29e09386f7a17509e98bb83cf4ceb0"
+GEMINI_KEY = "AIzaSyC_-EZislEb5Ctq8JjCk4FSdYI2YbLzCjQ"
+gemini_client = google_genai.Client(api_key=GEMINI_KEY)
 
 # ─────────────────────────────────────────────
 # DATABASE SETUP
@@ -120,6 +123,50 @@ def compare():
         "hottest_city": hottest["city"],
         "coldest_city": coldest["city"],
         "not_found": not_found
+    })
+
+@app.route("/weather-advice", methods=["POST"])
+def weather_advice():
+    body = request.get_json()
+    city = body.get("city")
+
+    if not city:
+        return jsonify({"error": "Please provide a city"}), 400
+
+    # fetch weather
+    url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={API_KEY}&units=metric"
+    response = requests.get(url)
+    data = response.json()
+
+    if response.status_code != 200:
+        return jsonify({"error": "City not found"}), 404
+
+    temp     = data["main"]["temp"]
+    humidity = data["main"]["humidity"]
+    weather  = data["weather"][0]["description"]
+
+    # ask Gemini for advice
+    prompt = f"""
+    The weather in {city} is:
+    - Temperature: {temp}°C
+    - Humidity: {humidity}%
+    - Condition: {weather}
+
+    Give short practical advice for someone living there today.
+    Maximum 3 sentences.
+    """
+
+    gemini_response = gemini_client.models.generate_content(
+        model="gemini-3.6-flash",
+        contents=prompt
+    )
+
+    return jsonify({
+        "city": city,
+        "temperature": temp,
+        "humidity": humidity,
+        "weather": weather,
+        "advice": gemini_response.text
     })
 
 # ─────────────────────────────────────────────
